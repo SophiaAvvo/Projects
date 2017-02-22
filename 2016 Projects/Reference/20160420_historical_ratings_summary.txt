@@ -1,0 +1,48 @@
+with claim_date_b4_begin_date as 
+(
+    select a.professional_id
+         , a.etl_effective_begin_date
+         , to_date(b.professional_claim_date) as professional_claim_date
+    from
+    (
+        select professional_id
+             , min(etl_effective_begin_date) as etl_effective_begin_date
+        from dm.historical_professional_dimension
+        group by 1
+    ) a
+    inner join dm.professional_dimension b
+    on a.professional_id = b.professional_id
+    and to_date(b.professional_claim_date) < a.etl_effective_begin_date
+    where b.professional_delete_indicator = 'Not Deleted'
+    and b.professional_practice_indicator = 'Practicing'
+    and b.professional_name = 'lawyer'
+    and b.industry_name = 'Legal'
+)
+select count(distinct professional_id)
+from claim_date_b4_begin_date
+
+
+SELECT COUNT(b.professional_Id) ClaimedAttorneyCount
+	,SUM(CASE
+			WHEN to_date(b.professional_claim_date) < a.etl_effective_begin_date
+				THEN 1
+			ELSE 0
+		END) NoValidRatingAtClaimTime
+	,SUM(CASE
+			WHEN to_date(b.professional_claim_date) >= a.etl_effective_begin_date
+				THEN 1
+			ELSE 0
+		END) NoValidRatingAtClaimTime
+dm.professional_dimension b
+LEFT JOIN (select professional_id
+             , min(etl_effective_begin_date) as etl_effective_begin_date
+        from dm.historical_professional_dimension d
+		WHERE d.professional_avvo_rating IS NOT NULL
+        group by 1) a
+    on a.professional_id = b.professional_id
+    -- and to_date(b.professional_claim_date) < a.etl_effective_begin_date
+    where b.professional_delete_indicator = 'Not Deleted'
+    and b.professional_practice_indicator = 'Practicing'
+    and b.professional_name = 'lawyer'
+    and b.industry_name = 'Legal'
+	AND b.professional_claim_date IS NOT NULL

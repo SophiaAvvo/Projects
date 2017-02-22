@@ -1,0 +1,69 @@
+
+		select ct.professional_id
+		  ,ct.year_month
+			, sum(ct.website_visits) as website_visits
+			, sum(ct.phone_contacts) as phone_contacts
+			, sum(ct.email_contacts) as email_contacts
+		from
+		(
+				select dt.year_month
+					, ci.professional_id
+					, count(*) as website_visits
+					, 0 as phone_contacts
+					, 0 as email_contacts
+				from src.contact_impression ci
+				join DM.DATE_DIM d 
+				  on d.actual_date = ci.event_date
+				join 		
+				(
+					   select distinct d.year_month     
+					   from DM.DATE_DIM d
+					   where d.actual_date >= '2015-01-01'--to_date(now()- interval 6 month) -- **between six months ago
+							and d.actual_date <= '2016-02-29'--to_date(now()) -- and now; - interval 1 month) -- **not sure why we'd use "one month ago"
+					) dt 
+					 on dt.year_month = d.year_month
+				where ci.contact_type = 'website'
+				group by 1,2
+	
+				union
+
+				select dt.year_month
+					, ci.professional_id
+					, 0 as website_visits
+					, count(*) as phone_contacts
+					, 0 as email_contacts
+				from src.contact_impression ci
+				  join DM.DATE_DIM d 
+				    on d.actual_date = ci.event_date
+				  join ( -- this just acts as a filter
+					       select distinct d.year_month     
+					       from DM.DATE_DIM d
+					       where d.actual_date >= '2015-01-01'--to_date(now()- interval 6 month)
+							   and d.actual_date <= '2016-02-29'--to_date(now())-- - interval 1 month)
+					     ) dt 
+					   on dt.year_month = d.year_month
+			   where ci.contact_type = 'phone'
+			   group by 1,2
+	
+				union
+
+				select dt.year_month
+					, ci.professional_id
+					, 0 as website_visits
+				  , 0 as phone_contacts
+					, count(*) as email_contacts
+				from src.contact_impression ci
+				  join DM.DATE_DIM d 
+				    on d.actual_date = ci.event_date
+				  join (
+					       select distinct d.year_month     
+					       from DM.DATE_DIM d
+					       where d.actual_date >= '2015-01-01'--to_date(now()- interval 6 month)
+							   and d.actual_date <= '2016-02-29'--to_date(now()) -- - interval 1 month)
+					     ) dt 
+					    on dt.year_month = d.year_month
+				where ci.contact_type = 'email'
+				group by 1,2
+		) ct
+		group by 1,2 -- aggregate contacts of each type by professional ID
+ORDER BY ct.year_month

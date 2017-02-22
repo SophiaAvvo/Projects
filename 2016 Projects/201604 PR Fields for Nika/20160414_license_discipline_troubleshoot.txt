@@ -1,0 +1,45 @@
+WITH license_discipline AS (
+  SELECT ps.professional_id
+  ,MIN(bl.license_date) FirstLicenseDate
+  ,MAX(bl.license_date) LastLicenseDate
+  ,COUNT(DISTINCT bl.id) licensecount
+  ,COUNT(bs.id) SanctionCount
+  ,COUNT(CASE
+      WHEN bs.case_information LIKE '%disbarred%'
+          THEN bs.license_id
+      ELSE NULL
+   END ) DisbarCount
+   ,COUNT(CASE
+          WHEN bs.case_information LIKE '%disbarred%'
+              THEN NULL
+            WHEN bs.case_information LIKE '%suspended%'
+                THEN bs.sanction_number
+            WHEN bs.case_information LIKE '%suspension%'
+                THEN bs.sanction_number
+            ELSE NULL
+         END ) SuspensionCount
+  
+FROM SRC.barrister_professional_status ps
+  LEFT JOIN src.barrister_license bl
+      ON ps.professional_id = bl.professional_id
+  LEFT JOIN src.barrister_sanction bs
+      ON bl.id = bs.license_id
+-- WHERE ps.sanctioned = 'Y'--AND bs.case_information LIKE '%disbar%'
+GROUP BY 1
+-- ORDER BY SuspensionCount DESC
+  )
+  
+SELECT *
+FROM license_discipline
+WHERE DisbarCount > 1--SuspensionCount + DisbarCount > SanctionCount
+
+SELECT ps.professional_id
+,bl.*
+,bs.*
+FROM SRC.barrister_professional_status ps
+  LEFT JOIN src.barrister_license bl
+      ON ps.professional_id = bl.professional_id
+  LEFT JOIN src.barrister_sanction bs
+      ON bl.id = bs.license_id
+WHERE ps.professional_id = 511235
+

@@ -1,0 +1,3 @@
+SELECT *
+FROM src.history_barrister_professional_scoring_log lg
+WHERE id = 19061

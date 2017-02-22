@@ -1,0 +1,94 @@
+/* Raw Data (by Provider) */
+select  pro.id as professional_id
+        , p.id as provider_id
+        , concat(pro.firstname, ' ', pro.lastname) as lawyer_name
+        , fully_functional as enrolled
+        , case when ifnull(num_non_advisor_services_selected,0) > 0 then 1 else 0 end as non_advisor_services_selected
+        , case when num_advisor_services_selected > 0 then 1 else 0 end as offering_advisor
+        , case when fully_functional = 1 and (ifnull(num_non_advisor_services_selected,0) + ifnull(num_advisor_services_selected,0)) > 0 then 1 else 0 end as ready_to_transact
+        , case when fully_functional = 1 and ifnull(num_advisor_services_selected,0) > 0 and ifnull(num_non_advisor_services_selected,0) = 0 then 1 else 0 end as rtt_advisor_only
+        , case when fully_functional = 1 and ifnull(num_non_advisor_services_selected,0) > 0 then 1 else 0 end as rtt_non_advisor_services
+        , p.accepting_sessions as notifications_enabled
+        , ifnull(num_non_advisor_services_selected,0) as num_non_advisor_services_selected
+        , case when p.phone_number_confirmed_at is not null then '1' else '0' end as mobile_number_confirmed
+        , case when b.verification_status is null then 'Not on file' else b.verification_status end as bank_account_status
+        , case
+            when w.id is not null and (w.name is null or w.name = '') then 'W9 name not filled out'
+            when w.id is not null and (w.name is not null and w.name != '') then 'W9 filled out'
+            else 'W9 not filled out'
+            end as w9_compliance
+        , date(date_sub(p.created_at, interval 8 hour)) as registration_date
+        , ifnull(
+            case
+            when b.verification_status != 'verified' or p.phone_number_confirmed_at is null then 'Bank/w9/mobile not filled out'
+            when b.updated_at > w.w9_effective_date then date(b.updated_at)
+            else date(date_sub(w.w9_effective_date, interval 8 hour))
+            end
+       , 'Bank/w9 not filled out') as enrollment_date
+       , ifnull(po.first_pls_selected_services_date, 'No services selected') as first_pls_selected_services_date
+
+from providers p
+       left join professionals pro on p.professional_id = pro.id
+
+       left join (
+         select provider_id, count(distinct offer_id) as num_non_advisor_services_selected
+         from provider_offers
+         join offers on provider_offers.offer_id = offers.id
+         join packages on offers.package_id = packages.id
+         where approved = 1 and capable = 1 and opted_in = 1 and packages.advisor = 0
+         group by 1
+       ) non_advisor_services on p.id = non_advisor_services.provider_id
+
+       left join (
+         select provider_id, count(distinct offer_id) as num_advisor_services_selected
+         from provider_offers
+         join offers on provider_offers.offer_id = offers.id
+         join packages on offers.package_id = packages.id
+         where approved = 1 and capable = 1 and opted_in = 1 and packages.advisor = 1
+         group by 1
+       ) advisor_services on p.id = advisor_services.provider_id
+
+       left join (
+         select ba.id, ba.provider_id, ba.verification_status, ba.updated_at
+         from bank_accounts ba
+         where ba.active = 1
+       ) b on p.id = b.provider_id
+
+       left join (
+		 select w.id, w.provider_id, w.name, w.effective_date as w9_effective_date
+        from w9s w
+        inner join (
+          select provider_id, max(effective_date) as latest_effective_date from w9s group by 1
+        ) latest_form on w.effective_date = latest_form.latest_effective_date and w.provider_id = latest_form.provider_id
+       ) w on p.id = w.provider_id
+       left join (
+         select provider_id, min(date(date_sub(provider_offers.updated_at, interval 8 hour))) as first_pls_selected_services_date
+         from provider_offers
+         join offers on provider_offers.offer_id = offers.id
+         join packages on offers.package_id = packages.id
+         where packages.advisor = 1 and opted_in = 1 group by 1
+       ) po on p.id = po.provider_id
+
+        where test_provider = 0;
+
+
+/* Raw Data (by Package)*/
+select  ifnull(st.name, 'NA') as package_state
+        , sp.name as practice_area
+        , pc.name as package_category
+        , pa.id as package_id
+        , case when st.id is null then 'Profile Checkout' else pa.name end as package
+        , concat(pro.firstname, ' ', pro.lastname) as lawyer_name
+        , pro.id as professional_id
+        , p.id as provider_id
+        , p.fully_functional as Enrolled
+from providers p
+left join professionals pro on p.professional_id = pro.id
+left join provider_offers po on p.id = po.provider_id
+left join offers o on o.id = po.offer_id
+left join packages pa on pa.id = o.package_id
+left join package_categories pc ON pc.id = pa.package_category_id
+left join specialties sp on pa.specialty_id = sp.id
+left join states st on o.state_id = st.id
+where opted_in = 1 and capable = 1 and approved = 1 and test_provider = 0
+order by 1, 4, 2, 3;

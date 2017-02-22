@@ -1,0 +1,11 @@
+SELECT COUNT(eds.endorsee_id) --  AS professional_id,
+                   /*eds.id AS End_Id,
+                   CASE
+                     WHEN EXTRACT(MONTH FROM eds.created_at) < 10 THEN CAST(CONCAT (CAST(EXTRACT(YEAR FROM eds.created_at) AS VARCHAR),'0',CAST(EXTRACT(MONTH FROM eds.created_at) AS VARCHAR)) AS INT)
+                     ELSE CAST(CONCAT (CAST(EXTRACT(YEAR FROM eds.created_at) AS VARCHAR),CAST(EXTRACT(MONTH FROM eds.created_at) AS VARCHAR)) AS INT) 
+                   
+                   END EndorsementYearMonth--,EXTRACT(month FROM eds.created_at) EndorsementMonth */
+                   ,MIN(eds.created_at)
+                   ,eds.endorsement_text
+                   FROM src.barrister_professional_endorsement eds
+                   GROUP BY 3

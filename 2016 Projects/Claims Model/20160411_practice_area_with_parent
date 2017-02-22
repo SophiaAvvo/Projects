@@ -1,0 +1,6 @@
+SELECT *
+FROM DM.SPECIALTY_DIMENSION sp
+WHERE sp.specialty_id < 1
+				OR sp.specialty_id > 131
+ORDER BY parent_specialty_name
+ ,specialty_name

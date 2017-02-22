@@ -1,0 +1,11 @@
+SELECT professional_id
+         -- COUNT(DISTINCT id) Review_Count,
+         ,MIN(pr.created_at) ReviewDate
+         ,overall_rating
+         -- SUM(recommended) / COUNT(recommended)*1.0 PercentRecommended,
+         -- AVG(overall_rating) AvgRating
+  FROM src.barrister_professional_review pr
+  WHERE professional_id < 10000 AND overall_rating IS NOT NULL
+ --  WHERE -- created_at BETWEEN '2015-05-01' AND '2016-02-29'
+  GROUP BY 1,3
+  ORDER BY ReviewDate

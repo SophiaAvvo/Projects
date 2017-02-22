@@ -1,0 +1,99 @@
+PA1 AS (
+SELECT pa.professional_id
+,pa.specialty_id
+,pa.specialty_percent
+,sp.specialty_name
+,sp.parent_specialty_name
+,ROW_NUMBER() OVER(PARTITION BY pa.professional_id ORDER BY pa.specialty_percent DESC) PA_Rank
+,pa.StartDate
+,pa.EndDate
+-- ,SUM(pfsp.specialty_percent) OVER(PARTITION BY pfsp.professional_id, pfsp.source_system_begin_date) SumTo100Test
+                     FROM (
+					 SELECT CASE
+						WHEN pfsp.source_system_begin_date < '2008-12-16'
+							THEN '2008-12-16'
+						ELSE pfsp.source_system_begin_date
+						END StartDate
+					
+					 ,CASE
+						WHEN pfsp.source_system_end_date IS NULL
+							THEN to_date(now())
+						ELSE pfsp.source_system_end_date
+					 END EndDate
+					 ,pfsp.professional_id
+					 ,pfsp.specialty_id
+					 ,pfsp.specialty_percent
+					 FROM DM.historical_PROFESSIONAL_SPECIALTY_BRIDGE pfsp
+                     WHERE pfsp.delete_flag = 'N'
+                     AND (pfsp.record_flag <> 'D' OR pfsp.record_flag IS NULL)
+					 ) pa
+					 JOIN deduped_pfad pd
+                     ON pd.professional_id = pa.professional_id
+                     AND pd.reference_date_prior_day BETWEEN pa.startdate AND pa.enddate
+                     AND pd.professional_id < 100000
+                     JOIN DM.SPECIALTY_DIMENSION sp 
+                     ON sp.SPECIALTY_ID = pa.SPECIALTY_ID
+
+)
+
+,
+
+PA2 AS (SELECT x.PROFESSIONAL_ID
+                   ,MIN(CASE WHEN x.PA_Rank = 1 THEN x.SPECIALTY_NAME ELSE NULL END) AS PracticeArea1
+                      ,MIN(CASE WHEN x.PA_Rank = 2 THEN x.SPECIALTY_NAME ELSE NULL END) AS PracticeArea2
+                      ,MIN(CASE WHEN x.PA_Rank = 3 THEN x.SPECIALTY_NAME ELSE NULL END) AS PracticeArea3
+                      ,MIN(CASE WHEN x.PA_Rank = 1 THEN x.PARENT_SPECIALTY_NAME ELSE NULL END) AS ParentPracticeArea1
+                      ,MIN(CASE WHEN x.PA_Rank = 2 THEN x.PARENT_SPECIALTY_NAME ELSE NULL END) AS ParentPracticeArea2
+                      ,MIN(CASE WHEN x.PA_Rank = 3 THEN x.PARENT_SPECIALTY_NAME ELSE NULL END) AS ParentPracticeArea3
+		FROM PA1 x
+		GROUP BY 1
+)
+
+,
+  
+ profile_views AS (
+ SELECT professional_Id
+	,COUNT(DISTINCT PID_date_concat) DistinctProfileViewCount
+	,SUM(ProfileRenderCount) TotalProfileRenderCount
+	FROM (
+			SELECT p.professional_id
+				,CONCAT(pv.persistent_session_id, pv.event_date) PID_date_concat
+				 ,COUNT(DISTINCT render_instance_guid) AS ProfileRenderCount
+		  FROM src.page_view pv
+			JOIN deduped_pfad p
+				ON p.professional_id = CAST(regexp_extract(url,'-([0-9]+)',1) AS INT)
+				AND pv.`timestamp` BETWEEN p.reference_datetime_prior_month AND p.reference_datetime_prior_day
+				  AND   page_type = 'Attorney_Profile'
+		  GROUP BY 1,2
+		 ) x
+	GROUP BY 1
+  )
+  
+,
+
+reviews AS
+(
+  SELECT pr.professional_id,
+         COUNT(DISTINCT id) Review_Count,
+         SUM(recommended) / COUNT(recommended)*1.0 PercentRecommended,
+         AVG(overall_rating) AvgRating
+  FROM src.barrister_professional_review pr
+	JOIN deduped_pfad p
+		ON p.professional_id = pr.professional_id
+		AND pr.created_at BETWEEN p.reference_datetime_prior_month AND p.reference_datetime_prior_day
+  GROUP BY pr.professional_Id
+)
+
+,
+
+endorsements AS (
+
+	SELECT eds.endorsee_id AS professional_id
+		,COUNT(DISTINCT eds.id) AS End_Count
+    FROM src.barrister_professional_endorsement eds
+		JOIN deduped_pfad p
+			ON p.professional_id = eds.endorsee_id 
+			AND eds.created_at BETWEEN p.reference_datetime_prior_month AND p.reference_datetime_prior_day
+    GROUP BY 1
+                   
+)

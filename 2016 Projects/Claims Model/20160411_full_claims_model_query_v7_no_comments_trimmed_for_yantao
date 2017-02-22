@@ -1,0 +1,625 @@
+WITH deduped_pfad AS
+(
+SELECT pfad.PROFESSIONAL_ID
+         ,pfad.is_claim
+         ,pfad.claim_date
+         ,pfad.claim_method
+         ,pfad.domain
+         ,pfad.emaildomain
+         ,pfad.emailsuffix
+         ,pfad.lowscoreemaildomain
+         ,pfad.rating
+         ,pfad.county
+         ,pfad.state
+         ,CASE
+           WHEN toppa.ParentPracticeArea1 IN ('Criminal Defense','DUI & DWI','Divorce & Separation','Personal Injury','Family','Immigration','Car Accidents','Bankruptcy & Debt','Chapter 11 Bankruptcy','Chapter 13 Bankruptcy','Chapter 7 Bankruptcy','Workers Compensation','Child Custody','Employment & Labor','Real Estate','Estate Planning','Business','Lawsuits & Disputes','Motorcycle Accident') THEN 'Y'
+           ELSE 'N'
+         END AS PriorityPA1
+         ,pfad.LawyerName
+         ,pfad.LawyerName_Full
+         ,pfad.firstname
+         ,pfad.lastname
+         ,pfad.middlename
+         ,pfad.suffix
+         ,pfad.phone1
+         ,pfad.phone2
+         ,pfad.phone3
+         ,pfad.email
+         ,pfad.prof_name AS professional_name
+         ,pfad.ind_name AS industry_name
+         ,pfad.country AS professional_country_name_1
+         ,toppa.PracticeArea1
+         ,toppa.PracticeArea2
+         ,toppa.PracticeArea3
+         ,toppa.ParentPracticeArea1
+         ,toppa.ParentPracticeArea2
+         ,toppa.ParentPracticeArea3
+         ,CASE
+           WHEN pfad.HasEmail = 1 THEN 'Ok Email'
+           ELSE 'Bad Email'
+         END Email_Status
+         ,CASE
+           WHEN pfad.HasPhone1 + pfad.HasPhone2 + pfad.HasPhone3 = 0 THEN 'Bad Phone'
+           ELSE 'Ok Phone'
+         END AS Phone_Status
+         ,CASE
+           WHEN pfad.IsExcludedTitle = 1 THEN 'Exclude Title'
+           ELSE 'Title Okay'
+         END IsExcludedTitle
+  FROM (SELECT pd.*
+              ,CASE
+                 WHEN pd.phone1 IS NOT NULL THEN ROW_NUMBER() OVER (PARTITION BY pd.phone1,pd.email,pd.lastname,pd.firstname,pd.state ORDER BY pd.is_claim DESC, pd.phone1 DESC,pd.email DESC,phone2 DESC,phone3 DESC,pd.county DESC,pd.MiddleInitial DESC,pd.MiddleNameLength DESC,pd.suffix DESC,pd.rating DESC,pd.professional_id)
+                 ELSE 1
+               END AS NonNullPhone1Check
+               ,CASE
+                 WHEN pd.phone1 IS NULL THEN ROW_NUMBER() OVER (PARTITION BY pd.email,pd.firstname,pd.lastname,pd.state ORDER BY pd.is_claim DESC, pd.email DESC,pd.county DESC,pd.MiddleInitial DESC,pd.MiddleNameLength DESC,pd.suffix DESC,pd.rating DESC,pd.professional_id)
+                 ELSE 1
+               END AS NullPhone1Check
+               ,CASE
+                 WHEN pd.email IS NOT NULL THEN ROW_NUMBER() OVER (PARTITION BY pd.email,pd.phone1,pd.lastname,pd.firstname,pd.state ORDER BY pd.is_claim DESC, pd.phone1 DESC,pd.email DESC,phone2 DESC,phone3 DESC,pd.county DESC,pd.MiddleInitial DESC,pd.MiddleNameLength DESC,pd.suffix DESC,pd.rating DESC,pd.professional_id)
+                 ELSE 1
+               END AS NonNullEmailCheck
+               ,CASE
+                 WHEN pd.email IS NULL THEN ROW_NUMBER() OVER (PARTITION BY pd.phone1,pd.firstname,pd.lastname,pd.state ORDER BY pd.is_claim DESC, pd.phone1 DESC,phone2 DESC,phone3 DESC,pd.county DESC,pd.MiddleInitial DESC,pd.MiddleNameLength DESC,pd.suffix DESC,pd.rating DESC,pd.professional_id)
+                 ELSE 1
+               END AS NullEmailCheck
+               ,CASE
+                 WHEN pd.email IS NULL AND pd.phone1 IS NULL THEN ROW_NUMBER() OVER (PARTITION BY pd.lastname,pd.firstname,pd.state ORDER BY pd.is_claim DESC, pd.MiddleInitial DESC,pd.MiddleNameLength DESC,pd.suffix DESC,pd.rating DESC,pd.professional_id)
+                 ELSE 1
+               END AS DoubleNullCheck 
+               ,CASE
+                 WHEN pd.email IS NULL THEN 0
+                 ELSE 1
+               END AS HasEmail
+               ,CASE
+                 WHEN pd.phone1 IS NULL THEN 0
+                 ELSE 1
+               END AS HasPhone1
+               ,CASE
+                 WHEN pd.phone2 IS NULL THEN 0
+                 ELSE 1
+               END AS HasPhone2
+               ,CASE
+                 WHEN pd.county IS NULL THEN 0
+                 ELSE 1
+               END AS HasCounty
+               ,CASE
+                 WHEN pd.phone3 IS NULL THEN 0
+                 ELSE 1
+               END AS HasPhone3
+               ,CASE
+                 WHEN pd.MiddleInitial IS NULL THEN 0
+                 ELSE 1
+               END AS HasMiddleInitial
+               ,(SUBSTR(UPPER(pd.emaildomain),LENGTH(pd.emaildomain) -3)) EmailSuffix
+               ,CASE
+                 WHEN (SUBSTR (UPPER(pd.emaildomain),LENGTH(pd.emaildomain) -3) IN ('.EDU','.GOV','.ORG','CO.US')) THEN 1
+                 ELSE 0
+               END AS LowScoreEmailDomain
+              -- ,CAST(pf.professional_Id AS VARCHAR) AS professional_id_str
+        FROM (SELECT pf.PROFESSIONAL_ID
+                     ,pf.professional_claim_method_name claim_method
+                     ,CASE
+                       WHEN pf.PROFESSIONAL_CLAIM_DATE IS NULL THEN 0
+                       ELSE 1
+                     END AS is_claim
+                     ,pf.professional_claim_date claim_date
+                     ,CASE
+                       WHEN pf.PROFESSIONAL_COUNTY_NAME_1 = 'NOT APPLICABLE'
+              THEN NULL
+                       ELSE LOWER(TRIM(pf.PROFESSIONAL_COUNTY_NAME_1))
+                     END county
+                     ,CASE
+                       WHEN pf.PROFESSIONAL_STATE_NAME_1 = 'NOT APPLICABLE'
+              THEN NULL
+                       ELSE LOWER(TRIM(pf.PROFESSIONAL_STATE_NAME_1))
+                     END state
+                     ,CASE
+                       WHEN pf.PROFESSIONAL_CITY_NAME_1 = 'NOT APPLICABLE' THEN NULL
+                       ELSE LOWER(TRIM(pf.PROFESSIONAL_CITY_NAME_1))
+                     END city
+                     ,PROFESSIONAL_PREFIX
+                     ,PROFESSIONAL_FIRST_NAME AS FirstName
+                     ,PROFESSIONAL_LAST_NAME AS LastName
+                     ,PROFESSIONAL_MIDDLE_NAME AS MiddleName
+                     ,PROFESSIONAL_SUFFIX AS Suffix
+                     ,CASE
+                       WHEN PROFESSIONAL_PHONE_NUMBER_1 LIKE '%Not%'
+              THEN NULL
+                       WHEN LENGTH(PROFESSIONAL_PHONE_NUMBER_1) < 10
+              THEN NULL
+                       ELSE PROFESSIONAL_PHONE_NUMBER_1
+                     END AS phone1
+                     ,CASE
+                       WHEN PROFESSIONAL_PHONE_NUMBER_2 LIKE '%Not%' THEN NULL
+                       WHEN LENGTH(PROFESSIONAL_PHONE_NUMBER_2) < 10 THEN NULL
+                       WHEN PROFESSIONAL_PHONE_NUMBER_2 = PROFESSIONAL_PHONE_NUMBER_1
+              THEN NULL
+                       ELSE PROFESSIONAL_PHONE_NUMBER_2
+                     END AS phone2
+                     ,CASE
+                       WHEN PROFESSIONAL_PHONE_NUMBER_3 LIKE '%Not%' THEN NULL
+                       WHEN LENGTH(PROFESSIONAL_PHONE_NUMBER_3) < 10 THEN NULL
+                       WHEN PROFESSIONAL_PHONE_NUMBER_3 = PROFESSIONAL_PHONE_NUMBER_1
+              THEN NULL
+                       WHEN PROFESSIONAL_PHONE_NUMBER_3 = PROFESSIONAL_PHONE_NUMBER_2
+              THEN NULL
+                       ELSE PROFESSIONAL_PHONE_NUMBER_3
+                     END AS phone3
+                     ,CASE
+                       WHEN LTRIM (LOWER(PROFESSIONAL_EMAIL_ADDRESS_NAME)) LIKE 'info@%' THEN NULL
+                       WHEN LTRIM (LOWER(PROFESSIONAL_EMAIL_ADDRESS_NAME)) LIKE 'contactus@%' THEN NULL
+                       WHEN PROFESSIONAL_EMAIL_ADDRESS_NAME = ' ' THEN NULL
+                       WHEN PROFESSIONAL_EMAIL_ADDRESS_NAME = 'Null' THEN NULL
+                       ELSE PROFESSIONAL_EMAIL_ADDRESS_NAME
+                     END AS email
+                     ,LENGTH(TRIM(PROFESSIONAL_MIDDLE_NAME)) AS MiddleNameLength
+                     ,pf.PROFESSIONAL_AVVO_RATING AS rating
+                     ,concat(PROFESSIONAL_FIRST_NAME,' ',PROFESSIONAL_LAST_NAME) AS LawyerName
+
+                     ,CASE
+                       WHEN PROFESSIONAL_PREFIX IS NULL AND PROFESSIONAL_SUFFIX IS NULL AND PROFESSIONAL_MIDDLE_NAME IS NULL THEN concat (PROFESSIONAL_FIRST_NAME,' ',PROFESSIONAL_LAST_NAME)
+                       WHEN PROFESSIONAL_PREFIX IS NULL AND PROFESSIONAL_SUFFIX IS NULL THEN concat (PROFESSIONAL_FIRST_NAME,' ',PROFESSIONAL_MIDDLE_NAME,' ',PROFESSIONAL_LAST_NAME)
+                       WHEN PROFESSIONAL_PREFIX IS NULL AND PROFESSIONAL_MIDDLE_NAME IS NULL THEN concat (PROFESSIONAL_FIRST_NAME,' ',PROFESSIONAL_LAST_NAME,' ',PROFESSIONAL_SUFFIX)
+                       WHEN PROFESSIONAL_PREFIX IS NULL THEN concat (PROFESSIONAL_FIRST_NAME,' ',PROFESSIONAL_MIDDLE_NAME,' ',PROFESSIONAL_LAST_NAME,' ',PROFESSIONAL_SUFFIX)
+                       WHEN PROFESSIONAL_SUFFIX IS NULL AND PROFESSIONAL_MIDDLE_NAME IS NULL THEN concat (PROFESSIONAL_PREFIX,' ',PROFESSIONAL_FIRST_NAME,' ',PROFESSIONAL_LAST_NAME)
+                       WHEN PROFESSIONAL_SUFFIX IS NULL THEN concat (PROFESSIONAL_PREFIX,' ',PROFESSIONAL_FIRST_NAME,' ',PROFESSIONAL_MIDDLE_NAME,' ',PROFESSIONAL_LAST_NAME)
+                       WHEN PROFESSIONAL_MIDDLE_NAME IS NULL THEN concat (PROFESSIONAL_PREFIX,' ',PROFESSIONAL_FIRST_NAME,' ',PROFESSIONAL_LAST_NAME,' ',PROFESSIONAL_SUFFIX)
+                       ELSE concat (PROFESSIONAL_PREFIX,' ',PROFESSIONAL_FIRST_NAME,' ',PROFESSIONAL_MIDDLE_NAME,' ',PROFESSIONAL_LAST_NAME,' ',PROFESSIONAL_SUFFIX)
+                     END AS LawyerName_Full
+                     ,CASE
+                       WHEN PROFESSIONAL_PREFIX IN ('Chiefjustice','Col','Col.','Colonel','Hon','Hon.','Honorable','Maj','Maj.','Maj. Gen.','Major','Mr. Judge','Mr. Justice','The Honorable') THEN 1
+                       ELSE 0
+                     END AS IsExcludedTitle
+                     ,SUBSTR(TRIM(PROFESSIONAL_MIDDLE_NAME),1,1) MiddleInitial
+                     ,pf.PROFESSIONAL_NAME AS prof_name
+                     ,pf.INDUSTRY_NAME AS ind_name
+                     ,pf.PROFESSIONAL_COUNTRY_NAME_1 AS country
+                     ,substr(pf.professional_email_address_name,instr (professional_email_address_name,'@') +1) AS emaildomain
+                     ,CASE
+                       WHEN (parse_url (pf.PROFESSIONAL_WEBSITE_URL,'HOST') IS NULL AND instr (pf.PROFESSIONAL_WEBSITE_URL,'http:') = 1) THEN pf.PROFESSIONAL_WEBSITE_URL
+                       WHEN (parse_url (pf.PROFESSIONAL_WEBSITE_URL,'HOST') IS NULL AND instr (pf.PROFESSIONAL_WEBSITE_URL,'http:') = 0) THEN substr (pf.PROFESSIONAL_WEBSITE_URL,instr (pf.PROFESSIONAL_WEBSITE_URL,'www.') +1)
+                       WHEN (parse_url (pf.PROFESSIONAL_WEBSITE_URL,'HOST') IS NOT NULL AND instr (pf.PROFESSIONAL_WEBSITE_URL,'www') = 0) THEN parse_url (pf.PROFESSIONAL_WEBSITE_URL,'HOST')
+                       ELSE substr (parse_url (pf.PROFESSIONAL_WEBSITE_URL,'HOST'),instr (pf.PROFESSIONAL_WEBSITE_URL,'www.') -3)
+                     END AS DOMAIN
+              FROM DM.PROFESSIONAL_DIMENSION pf
+              WHERE pf.PROFESSIONAL_DELETE_INDICATOR = 'Not Deleted'
+              AND   pf.PROFESSIONAL_PRACTICE_INDICATOR = 'Practicing'
+              AND   (CASE WHEN pf.PROFESSIONAL_STATE_NAME_1 IS NULL THEN 1 ELSE 0 END) = 0
+              AND   (CASE WHEN PROFESSIONAL_FIRST_NAME IS NULL THEN 1 ELSE 0 END) = 0
+              AND   (CASE WHEN PROFESSIONAL_LAST_NAME IS NULL THEN 1 ELSE 0 END) = 0
+              AND   pf.PROFESSIONAL_NAME = 'lawyer'
+              AND   pf.INDUSTRY_NAME = 'Legal'
+             ) pd
+             
+    ) pfad
+    LEFT JOIN SRC.barrister_professional_status ps 
+         ON ps.professional_id = pfad.PROFESSIONAL_ID
+    LEFT JOIN (SELECT x.PROFESSIONAL_ID
+                   ,MIN(CASE WHEN x.rt = 1 THEN x.SPECIALTY_NAME ELSE NULL END) AS PracticeArea1
+                      ,MIN(CASE WHEN x.rt = 2 THEN x.SPECIALTY_NAME ELSE NULL END) AS PracticeArea2
+                      ,MIN(CASE WHEN x.rt = 3 THEN x.SPECIALTY_NAME ELSE NULL END) AS PracticeArea3
+                      ,MIN(CASE WHEN x.rt = 1 THEN x.PARENT_SPECIALTY_NAME ELSE NULL END) AS ParentPracticeArea1
+                      ,MIN(CASE WHEN x.rt = 2 THEN x.PARENT_SPECIALTY_NAME ELSE NULL END) AS ParentPracticeArea2
+                      ,MIN(CASE WHEN x.rt = 3 THEN x.PARENT_SPECIALTY_NAME ELSE NULL END) AS ParentPracticeArea3
+               FROM (SELECT pfsp.PROFESSIONAL_ID
+                            ,pfsp.SPECIALTY_PERCENT
+                            ,sp.SPECIALTY_NAME
+                            ,sp.PARENT_SPECIALTY_NAME
+                            ,ROW_NUMBER() OVER (PARTITION BY pfsp.PROFESSIONAL_ID ORDER BY pfsp.SPECIALTY_PERCENT DESC) rt
+                     FROM DM.PROFESSIONAL_SPECIALTY_BRIDGE pfsp
+                       JOIN DM.SPECIALTY_DIMENSION sp ON sp.SPECIALTY_ID = pfsp.SPECIALTY_ID
+                     WHERE pfsp.DELETE_FLAG = 'N') x
+               GROUP BY 1) toppa ON toppa.PROFESSIONAL_ID = pfad.PROFESSIONAL_ID
+  WHERE ps.DECEASED = 'N'
+  AND   ps.JUDGE = 'N'
+  AND   ps.RETIRED = 'N'
+  AND   ps.OFFICIAL = 'N'
+  AND   ps.UNVERIFIED = 'N'
+  AND   ps.SANCTIONED = 'N'
+  AND   pfad.NonNullPhone1Check + pfad.NullPhone1Check + pfad.NonNullEmailCheck + pfad.NullEmailCheck + pfad.DoubleNullCheck = 5
+  --AND STRRIGHT(pf.professional_id_str, 1) NOT IN ('0', '1', '2', '3')
+)
+
+SELECT pf.professional_id
+,pf.claim_date
+,to_date(now()) nowAsDate
+,now() nowWithoutConversion
+,pf.claim_date - interval 1 day priorDayToClaim
+/*,pf.claim_date - interval 1 month priorMonthToClaim
+         ,CASE
+         	WHEN pf.claim_date IS NULL
+         		then to_date(now())
+            ELSE pf.claim_date - interval 1 day
+          END AS reference_date_final
+         ,CASE
+         	WHEN pf.claim_date IS NULL
+         	   THEN  */
+        FROM deduped_pfad pf
+        WHERE pf.professional_id BETWEEN 10000 AND 10010
+        ORDER BY pf.professional_id
+  
+  ,
+  
+pf_claim_date AS (
+
+SELECT pf.professional_id
+  ,EXTRACT(month FROM add_months(
+  
+  FROM (SELECT pf.professional_id
+         ,CASE
+         	WHEN pf.claim_date IS NULL
+         		then now()
+            ELSE pf.claim_date
+          END AS reference_date
+         ,CASE
+         	WHEN pf.claim_date IS NULL
+         	   THEN EXTRACT(month FROM now())
+         	ELSE EXTRACT(month FROM (add_months(pf.claim_date, -1))
+          END AS reference_month
+        FROM deduped_pfad pf
+        WHERE pf.professional_id BETWEEN 10000 AND 10010
+         		
+
+)
+,
+  
+profile_views AS
+(
+  SELECT CAST(regexp_extract(url,'-([0-9]+)',1) AS INT) AS professional_id
+         ,COUNT(DISTINCT render_instance_guid) AS distinct_pv
+  FROM src.page_view pv
+    JOIN dm.date_dim d1 ON d1.actual_date = pv.event_date
+  WHERE event_date BETWEEN '2015-05-01' AND '2016-02-29'
+  AND   page_type = 'Attorney_Profile'
+  GROUP BY 1
+),
+
+reviews AS
+(
+  SELECT professional_id,
+         COUNT(DISTINCT id) Review_Count,
+         SUM(recommended) / COUNT(recommended)*1.0 PercentRecommended,
+         AVG(overall_rating) AvgRating
+  FROM src.barrister_professional_review pr
+  WHERE created_at BETWEEN '2015-05-01' AND '2016-02-29'
+  GROUP BY professional_Id
+)
+
+,
+
+endorsements AS (
+
+SELECT eds.endorsee_id AS professional_id
+                   ,COUNT(DISTINCT eds.id) AS End_Count
+                   FROM src.barrister_professional_endorsement eds
+                   WHERE eds.created_at BETWEEN '2015-05-01' AND '2016-02-29'
+                   GROUP BY 1
+                   
+)
+
+,
+
+license AS (
+
+SELECT professional_id
+  ,MIN(license_date) FirstLicenseDate
+  ,MAX(license_date) LastLicenseDate
+  ,COUNT(id) licensecount
+FROM src.barrister_license bl
+GROUP BY professional_id
+
+)
+
+, ad_inventory as
+(
+	select md.year_month 
+		, adp.AD_MKT_ID
+		, case when block.AD_MKT_KEY is NULL then 'Exclusive' else 'Block' end as sl_inventory_type
+		, case when block.AD_MKT_KEY is NULL then 3 else block.sl_block_inventory end as sl_inventory
+		, case when block.AD_MKT_KEY is NULL then adp.PKG_PRICE_AMT_USD else block.sl_block_price end as sl_price
+		, adp.PKG_PRICE_AMT_USD as sl_subscription_price
+		, 'Exclusive' as da_inventory_type
+		, 1 as da_inventory 
+		, adp.PKG_PRICE_AMT_USD as da_price
+	from dm.ad_pricing_snapshot_fact adp
+	join DM.month_dim md on md.MONTH_KEY = adp.PRICNG_MONTH_KEY and md.year_month >= (extract(year from now()-interval 4 months))*100 +extract(month from now() - interval 4 months) 
+  and md.year_month <= (extract(year from now())*100)+extract(month from now())
+	join dm.ad_market_dimension adm on adm.ad_market_id = adp.AD_MKT_ID
+	left join
+	(
+		select *
+		from
+		(
+			select md.year_month
+				, apfb.AD_MKT_KEY 
+				, apfb.ROW_EFF_BEGIN_DATE
+				, apfb.ROW_EFF_END_DATE
+				, apfb.SELLBL_CNT as sl_block_inventory
+				, PKG_PRICE_AMT_USD as sl_block_price
+				, ROW_NUMBER() OVER(partition by md.MONTH_KEY, apfb.AD_MKT_KEY order by apfb.ROW_EFF_END_DATE desc) rt
+			from DM.MONTH_DIM md
+			join DM.V_AD_PRICING_FACT_BLOCK apfb on md.MONTH_BEGIN_DATE < apfb.ROW_EFF_END_DATE and md.MONTH_END_DATE >= apfb.ROW_EFF_BEGIN_DATE
+			where md.year_month >= (extract(year from now()-interval 4 months))*100 +extract(month from now() - interval 4 months) 
+          and md.year_month <= (extract(year from now())*100)+extract(month from now())
+		) a
+		where a.rt = 1
+	) block on block.year_month = md.year_month and block.AD_MKT_KEY = adp.AD_MKT_KEY
+	where adm.ad_market_active_flag = 'Y' and md.year_month <= 201512
+  
+  union
+ 
+  
+select t3.year_month, t3.ad_market_id, t3.sl_inventory_type, sum(t3.sl_inventory) sl_inventory, sum(t3.sl_price) sl_price, sum(t3.sl_subscription_price) sl_subscription_price,
+  t3.da_inventory_type, sum(t3.da_inventory) da_inventory, sum(t3.da_price) da_price
+ from
+(select t2.year_month, t2.ad_market_id,
+  case when t2.insertion_ad = 1 then 'Exclusive' else 'Block' end sl_inventory_type,
+  case when t2.insertion_ad = 1 and t2.ad_inventory_type = 'Sponsored Listing' then 3 when t2.insertion_ad = 0 and t2.ad_inventory_type = 'Sponsored Listing'
+     then t2.sellable_count else 0 end sl_inventory,
+  case when t2.ad_inventory_type = 'Sponsored Listing' then t2.list_price/100 else 0 end sl_price,
+  case when t2.ad_inventory_type = 'Sponsored Listing' then t2.list_price/100 else 0 end sl_subscription_price,
+  case when t2.insertion_ad = 1 then 'Exclusive' else 'Block' end da_inventory_type,
+  case when t2.insertion_ad = 1 and t2.ad_inventory_type = 'Display' then 1 when t2.insertion_ad = 0 and t2.ad_inventory_type = 'Display'
+    then t2.sellable_count else 0 end da_inventory,
+  case when t2.ad_inventory_type = 'Display' then t2.list_price/100 else 0 end da_price
+from
+(select distinct amd.ad_market_id, t.year_month, h.ad_inventory_type, h.insertion_ad, h.list_price, h.sellable_count
+from src.hist_nrt_ad_inventory h
+join (
+select year_month, ad_inventory_type, sales_region_id, specialty_id, max(max_update) mdate
+from (
+select md.year_month, hai.ad_inventory_type, hai.sales_region_id, hai.specialty_id, hai.max_update
+from dm.month_dim md
+  join (select ad_inventory_type, sales_region_id, specialty_id, extract(month from updated_at) month, extract(year from updated_at) year, max(updated_at) max_update
+  from src.hist_nrt_ad_inventory
+  group by 1, 2, 3, 4, 5) hai on hai.max_update <= md.month_end_date
+  where md.year_month >= (extract(year from now()-interval 2 years))*100 +extract(month from now())
+  and md.year_month <= (extract(year from now()))*100 +extract(month from now()) ) mu
+group by 1,2,3,4
+) t on t.ad_inventory_type = h.ad_inventory_type and t.sales_region_id = h.sales_region_id and t.specialty_id = h.specialty_id and t.mdate = h.updated_at
+join dm.ad_market_dimension amd on amd.ad_region_id = h.sales_region_id and amd.specialty_id = h.specialty_id
+ where amd.ad_market_active_flag = 'Y'
+)t2
+where t2.year_month >= 201601
+) t3
+group by t3.year_month, t3.ad_market_id, t3.sl_inventory_type, t3.da_inventory_type
+)
+
+, ad_revenue as
+(
+select dto.YEAR_MONTH
+                             , coalesce(admkt.ad_market_id, 0) ad_mkt_id
+                             , SUM(case when pln.PRODUCT_LINE_ITEM_NAME = 'Sponsored Listing' and olaf.order_line_indicator_id  in (1,2,3) and olaf.BLOCK_COUNT = 0 then 1
+                                                          when pln.PRODUCT_LINE_ITEM_NAME = 'Sponsored Listing' and olaf.order_line_indicator_id in (1,2,3) and olaf.BLOCK_COUNT > 0 then olaf.BLOCK_COUNT 
+                                                          else 0 end) as sl_sold_inventory
+                             , SUM(case when pln.PRODUCT_LINE_ITEM_NAME = 'Sponsored Listing' then olaf.order_line_net_price_amount_usd else 0 end) as sl_revenue
+                             , SUM(case when pln.PRODUCT_LINE_ITEM_NAME = 'Display Medium Rectangle' and olaf.order_line_indicator_id in (1,2,3) and olaf.block_count = 0 then 1
+                                   when pln.PRODUCT_LINE_ITEM_NAME = 'Display Medium Rectangle' and olaf.order_line_indicator_id in (1,2,3) and olaf.block_count > 0 then olaf.block_count 
+                                   else 0 end) as da_sold_inventory
+                             , SUM(case when pln.PRODUCT_LINE_ITEM_NAME = 'Display Medium Rectangle' then olaf.order_line_net_price_amount_usd else 0 end) as da_revenue
+              from DM.order_line_accumulation_fact  olaf    
+              join DM.DATE_DIM dto on dto.actual_date = olaf.ORDER_LINE_BEGIN_DATE
+              left join DM.product_line_dimension  pln on pln.product_line_id = olaf.product_line_id
+              left join DM.order_line_ad_market_fact  oladmkt on oladmkt.order_line_number  = olaf.order_line_number
+              left join DM.ad_market_dimension  admkt on admkt.ad_market_id = oladmkt.ad_market_id 
+             where dto.YEAR_MONTH >=  (extract(year from now()-interval 4 months))*100 +extract(month from now() - interval 4 months)
+                            and olaf.order_line_payment_date  <> '-1' 
+                            and pln.product_line_item_name  in ('Sponsored Listing', 'Display Medium Rectangle')
+              group by 1,2
+)
+
+, temp1 as (
+SELECT md.year_month
+				,adm.ad_market_id
+                                ,admm.ad_mkt_key
+				,lower(adm.ad_market_state_name) AS STATE
+				,lower(adm.ad_market_county_name) AS county
+				,lower(adm.ad_market_region_name) AS ad_region
+				,sp.parent_specialty_name AS parent_sp
+				,adm.ad_market_specialty_name AS specialty
+				,CASE 
+					WHEN adm.ad_market_block_flag = 'Y'
+						THEN 'Block'
+					ELSE 'Exclusive'
+					END AS market_type
+				,ai.sl_inventory_type
+				,ai.sl_inventory
+				,ai.sl_price
+				,ai.sl_subscription_price
+				,ai.sl_inventory * ai.sl_price AS sl_value
+				,coalesce(ar.sl_sold_inventory, 0) AS sl_sold_inventory
+				,coalesce(ar.sl_sold_inventory, 0) * ai.sl_price AS sl_sold_value
+				,coalesce(ar.sl_revenue, 0) AS sl_revenue
+				,ai.da_inventory_type
+				,ai.da_inventory
+				,ai.da_price
+				,ai.da_inventory * ai.da_price AS da_value
+				,coalesce(ar.da_sold_inventory, 0) AS da_sold_inventory
+				,coalesce(ar.da_sold_inventory, 0) * ai.da_price AS da_sold_value
+				,coalesce(ar.da_revenue, 0) AS da_revenue
+				,coalesce(ar.sl_revenue, 0) + coalesce(ar.da_revenue, 0) AS ad_revenue
+			FROM DM.ad_market_dimension adm
+			INNER JOIN DM.specialty_dimension sp ON sp.specialty_id = adm.specialty_id
+			INNER JOIN DM.MONTH_DIM md ON md.year_month >= 201501
+				AND md.year_month <= (extract(year FROM now()) * 100) + extract(month FROM now())
+			LEFT JOIN ad_inventory ai ON ai.AD_MKT_ID = adm.AD_MarkeT_ID
+				AND ai.year_month = md.year_month
+			LEFT JOIN ad_revenue ar ON ar.AD_MKT_ID = adm.AD_MarkeT_ID
+				AND ar.year_month = md.year_month
+                        LEFT JOIN DM.ad_mkt_dim admm on adm.ad_market_id = admm.ad_mkt_id
+			WHERE adm.ad_market_active_flag = 'Y'
+				AND sp.specialty_id >= 1
+				AND sp.specialty_id <= 131
+				)
+
+
+,temp2 as (
+select temp1.*
+			,sl_inventory - coalesce(sl_sold_inventory, 0) AS sl_unsold_inventory
+			,(sl_inventory - coalesce(sl_sold_inventory, 0)) * sl_price AS sl_unsold_value
+			,sl_sold_value / sl_value AS sl_sell_through
+			,sl_value - coalesce(sl_revenue, 0) AS sl_revenue_opportunity
+			,coalesce(sl_revenue, 0) / sl_value AS sl_monetization
+			,CASE 
+				WHEN (coalesce(sl_revenue, 0) / sl_value) >= 0.8
+					THEN 'High'
+				WHEN (coalesce(sl_revenue, 0) / sl_value) >= 0.5
+					THEN 'Medium'
+				ELSE 'Low'
+				END AS sl_monetization_status
+			,da_inventory - coalesce(da_sold_inventory, 0) AS da_unsold_inventory
+			,(da_inventory - coalesce(da_sold_inventory, 0)) * da_price AS da_unsold_value
+			,da_sold_value / da_value AS da_sell_through
+			,da_value - coalesce(da_revenue, 0) AS da_revenue_opportunity
+			,coalesce(da_revenue, 0) / da_value AS da_monetization
+			,CASE 
+				WHEN (coalesce(da_revenue, 0) / da_value) >= 0.8
+					THEN 'High'
+				WHEN (coalesce(da_revenue, 0) / da_value) >= 0.5
+					THEN 'Medium'
+				ELSE 'Low'
+				END AS da_monetization_status
+		FROM temp1
+		)
+
+,temp3 as (
+select temp2.*
+		,sl_value + da_value AS ad_value
+		,sl_sold_value + da_sold_value AS ad_sold_value
+		,sl_unsold_value + da_unsold_value AS ad_unsold_value
+		,sl_revenue_opportunity + da_revenue_opportunity AS ad_revenue_opportunity
+from temp2
+)
+
+
+,ad_market_detail as (
+	SELECT temp3.*
+	,ad_sold_value / ad_value AS ad_sell_through
+	,ad_revenue / ad_value AS ad_monetization
+	,CASE 
+		WHEN (ad_revenue / ad_value) >= 0.8
+			THEN 'High'
+		WHEN (ad_revenue / ad_value) >= 0.5
+			THEN 'Medium'
+		ELSE 'Low'
+		END AS ad_monetization_status
+	,CASE 
+		WHEN ad_value >= 5000
+			THEN 'Huge'
+		WHEN ad_value >= 1500
+			THEN 'Big'
+		WHEN ad_value >= 300
+			THEN 'Medium'
+		WHEN ad_value >= 25
+			THEN 'Small'
+		ELSE 'Tiny'
+		END AS market_size
+	FROM temp3
+	)
+    
+, ad_fields AS (
+
+select TRIM(amd.state) state
+                                           , TRIM(amd.county) county
+                                           , SUM(amd.sl_value) as sl_value
+                                           , SUM(amd.sl_revenue) as sl_revenue
+                                           , SUM(amd.sl_sold_value) as sl_sold_value
+                                           , SUM(amd.sl_unsold_value) as sl_unsold_value
+                                           , SUM(amd.sl_revenue_opportunity) as sl_revenue_opportunity
+                                           , SUM(amd.sl_revenue)/SUM(amd.sl_value) as sl_monetization                                          
+ 
+                                           , SUM(amd.da_value) as da_value
+                                           , SUM(amd.da_revenue) as da_revenue
+                                           , SUM(amd.da_sold_value) as da_sold_value
+                                           , SUM(amd.da_unsold_value) as da_unsold_value
+                                           , SUM(amd.da_revenue_opportunity) as da_revenue_opportunity
+                                           , SUM(amd.da_revenue)/SUM(amd.da_value) as da_monetization
+                                          
+                                           , SUM(amd.ad_value) as ad_value
+                                           , SUM(amd.ad_revenue) as ad_revenue
+                                           , SUM(amd.ad_sold_value) as ad_sold_value
+                                           , SUM(amd.ad_unsold_value) as ad_unsold_value
+                                           , SUM(amd.ad_revenue_opportunity) as ad_revenue_opportunity
+                                           , SUM(amd.ad_revenue)/SUM(amd.ad_value) as ad_monetization
+                                           from ad_market_detail amd
+                                           group by 1,2
+  
+  
+  )
+  
+,
+
+contacts as
+( select 
+professional_id
+, count(*) as num_contacts
+
+from src.contact_impression ci
+join dm.date_dim d on d.actual_date = ci.event_date
+where ci.event_date BETWEEN '2015-05-01' AND '2016-02-29'
+group by 1
+ )
+ ,
+ 
+impressions as
+(  select 
+CAST(id AS INT) as professional_id
+, count(api.persistent_session_id) as num_profileimpression
+
+from dm.all_professional_impressions api
+join dm.date_dim d on d.actual_date = api.event_date
+where api.event_date >= '2015-11-01'
+group by 1
+ )  
+
+SELECT pf.*
+       ,pv.distinct_pv
+       ,r.Review_Count
+      ,r.PercentRecommended
+       ,r.AvgRating
+       ,e.End_Count
+       ,lc.FirstLicenseDate
+       ,lc.LastLicenseDate
+       ,lc.licensecount
+       ,ed.EmailDomainSize
+       ,CASE
+          WHEN ed.EmailDomainSize >= 1
+            THEN 'Not Unique'
+            WHEN ed.EmailDomainSize = 1
+              THEN 'Unique'
+            ELSE NULL
+        END UniqueDomainFlag
+       ,CASE
+          WHEN LOWER(pf.emaildomain) IN ('gmail.com', 'yahoo.com', 'aol.com', 'msn.com', 'hotmail.com')
+            THEN 1
+          ELSE 0
+        END HighScoreEmailDomain
+       ,af.*
+       ,imp.num_profileimpression AS impressions2016only
+       ,c.num_contacts
+FROM deduped_pfad pf
+  LEFT JOIN license lc
+    ON lc.professional_id = pf.professional_id
+  LEFT JOIN profile_views pv 
+    ON pv.professional_id = pf.professional_id
+  LEFT JOIN reviews r 
+    ON r.professional_id = pf.professional_id
+  LEFT JOIN endorsements e
+    ON e.professional_id = pf.professional_id
+  LEFT JOIN (SELECT pf.emaildomain
+              ,COUNT(DISTINCT pf.professional_id) EmailDomainSize
+              FROM deduped_pfad pf
+              GROUP BY pf.emaildomain) ed
+     ON pf.emaildomain = ed.emaildomain
+  LEFT JOIN ad_fields af
+     ON af.state = pf.state
+     AND af.county = pf.county
+  LEFT JOIN impressions imp
+     ON imp.professional_id = pf.professional_id
+  LEFT JOIN contacts c
+     ON c.professional_id = pf.professional_id
+WHERE (lc.lastlicensedate >= '1943-01-01' OR lc.lastlicensedate IS NULL)
+  --AND STRRIGHT(CAST(pf.professional_id AS VARCHAR), 1) IN ('0', '1', '2', '3', '4')
+    
+ 

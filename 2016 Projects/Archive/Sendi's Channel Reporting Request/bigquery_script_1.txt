@@ -1,0 +1,4 @@
+EXACT_COUNT_DISTINCT(CONCAT(fullVisitorId, STRING(visitID)), 100000) AS sessions
+	,count(distinct concat(fullvisitorid, string(visitid)), 1000000) as sessions2
+FROM (TABLE_DATE_RANGE([dataset.ga_sessions_], TIMESTAMP('2014-01-01'),
+	TIMESTAMP('2016-02-01')))

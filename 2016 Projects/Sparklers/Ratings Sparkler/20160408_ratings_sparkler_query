@@ -1,0 +1,12 @@
+select professional_id
+				, professional_avvo_rating
+				, min(source_system_begin_date) as begin_date
+				, max(source_system_end_date) as end_date
+			from dm.historical_professional_dimension pd
+			where professional_avvo_rating is not null
+				and professional_id=19061
+			group by 1,2
+			
+SELECT *			
+from dm.historical_professional_dimension pd
+			where professional_id=19061			

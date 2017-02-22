@@ -1,0 +1,9 @@
+  select COUNT(CAST(regexp_extract(url, '-([0-9]+)', 1) AS INT)) as professional_id
+,d1.year_month
+, count(distinct render_instance_guid) as distinct_pv
+from src.page_view pv
+join dm.date_dim d1 
+            	   on d1.actual_date = pv.event_date
+where page_type = 'Attorney_Profile'
+group by 2
+order by 2

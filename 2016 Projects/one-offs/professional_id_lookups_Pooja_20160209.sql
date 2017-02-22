@@ -1,0 +1,3 @@
+SELECT *
+from  DM.PROFESSIONAL_DIMENSION pf
+WHERE pf.professional_id IN (299, 368, 4193)
